@@ -199,6 +199,7 @@ type TestStepResult struct {
 
 	Systemout string    `json:"systemout"`
 	Systemerr string    `json:"systemerr"`
+	LogsUrl   string    `json:"logsUrl,omitempty"`
 	Duration  float64   `json:"duration"`
 	Start     time.Time `json:"start"`
 	End       time.Time `json:"end"`
