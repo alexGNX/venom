@@ -103,8 +103,6 @@ func outputHTML(testsResult *Tests) ([]byte, error) {
                                 requestIdHeader = xrid
                             }
                         }
-
-                        }
                         if strings.ToLower(os.Getenv("LOGS_PLATFORM_NAME")) == "opensearch" {
                             fromDate := result.End.Add(-1 * time.Minute).UTC().Format("2006-01-02T15:04:05.000Z")
                             toDate := result.End.UTC().Format("2006-01-02T15:04:05.000Z")
