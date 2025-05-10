@@ -9,7 +9,9 @@ import (
 	"runtime/pprof"
 	"strconv"
 	"strings"
-
+	"time"
+    "net/http"
+    "encoding/json"
 	"github.com/mitchellh/go-homedir"
 	"github.com/pkg/errors"
 	"github.com/rockbears/yaml"
@@ -356,6 +358,13 @@ var Cmd = &cobra.Command{
             v.ExcludedTags = append(v.ExcludedTags, *excludeTagsFlag...)
         }
 
+        if os.Getenv("HAS_LOGS_PLATFORM") == "true" {
+            if strings.ToLower(os.Getenv("LOGS_PLATFORM_NAME")) == "opensearch" {
+                fetchOpenSearchIndexPatterns()
+            }
+        }
+
+
 		if err := v.InitLogger(); err != nil {
 			fmt.Fprintf(os.Stderr, "%v\n", err)
 			venom.OSExit(2)
@@ -428,6 +437,74 @@ var Cmd = &cobra.Command{
 
 		return nil
 	},
+}
+
+func fetchOpenSearchIndexPatterns() {
+	name := os.Getenv("LOGS_PLATFORM_NAME")
+	login := os.Getenv("LOGS_PLATFORM_LOGIN")
+	password := os.Getenv("LOGS_PLATFORM_PASSWORD")
+	baseURL := os.Getenv("LOGS_PLATFORM_BASE_URL")
+	streamTitle := os.Getenv("LOGS_STREAM_NAME")
+
+	if name == "" || login == "" || password == "" || baseURL == "" || streamTitle == "" {
+		fmt.Errorf("⚠️ One or more required environment variables are missing. Skipping logs platform request.")
+		return
+	}
+
+	if strings.ToLower(name) != "opensearch" {
+		fmt.Errorf("ℹ️ LOGS_PLATFORM_NAME is '%s', not 'opensearch'. Skipping logs platform request.\n", name)
+		return
+	}
+
+	fmt.Println("🚀 Sending request to logs platform...")
+
+	url := fmt.Sprintf("%s/api/saved_objects/_find?type=index-pattern&per_page=100", baseURL)
+
+	req, err := http.NewRequest("GET", url, nil)
+	req.SetBasicAuth(login, password)
+    req.Header.Set("Content-Type", "application/json")
+    req.Header.Set("kbn-xsrf", "true")
+	if err != nil {
+		fmt.Println("❌ Failed to create request: %v", err)
+	}
+
+
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Println("❌ Failed to execute request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Println("❌ Failed to read response body: %v", err)
+	}
+
+	var result struct {
+		SavedObjects []struct {
+			ID         string `json:"id"`
+			Attributes struct {
+				Title string `json:"title"`
+			} `json:"attributes"`
+		} `json:"saved_objects"`
+	}
+
+	if err := json.Unmarshal(body, &result); err != nil {
+		fmt.Println("❌ Failed to parse JSON response: %v", err)
+	}
+
+    fmt.Printf("🔍 Looking for: '%s'\n", streamTitle)
+	for _, obj := range result.SavedObjects {
+		if obj.Attributes.Title == streamTitle {
+		    fmt.Printf("✅ Found index-pattern with title='%s'", obj.Attributes.Title)
+			os.Setenv("LOGS_STREAM_ID", obj.ID)
+			return
+		}
+	}
+
+	fmt.Printf("❌ No index-pattern found with title='%s'.\n", streamTitle)
 }
 
 func readInitialVariables(ctx context.Context, argsVars []string, argVarsFiles []io.Reader, environ []string) (map[string]interface{}, error) {
